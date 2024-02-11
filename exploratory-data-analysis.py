@@ -1,12 +1,14 @@
 # Added on Friday 9 Feb by Philip P
 # Exploratory data analysis of parquet files: market data, executions, reference data
+from typing import Dict, Union
+
 import numpy as np
 import pandas as pd
 
 pd.options.display.max_columns = 14
 pd.options.display.width = 800
 
-def load_and_preprocess_data(file_path: str) -> pd.DataFrame
+def load_and_preprocess_data(file_path: str) -> pd.DataFrame:
     """
     Loads a parquet file into a DataFrame and converts column names to lowercase.
     
@@ -25,38 +27,41 @@ ref_data_df = load_and_preprocess_data('data/refdata.parquet')
 market_data_df = load_and_preprocess_data('data/marketdata.parquet')
 executions_df = load_and_preprocess_data('data/executions.parquet')
 
+# Task 1a: Exploratory Daa Analysis
+def count_executions_and_venues(executions_df: pd.DataFrame) -> Dict[str, Union[int, pd.DataFrame]]:
+    """
+    Counts the number of unique executions and venues, and summarizes executions by venue and date.
 
-def return_lowercase_column_names_df(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Utility function to make all column names lowercase for ease of calling functions"""
-    dataframe.columns = [x.lower() for x in dataframe.columns]
-    return dataframe
+    Parameters:
+        executions_df (pd.DataFrame): The executions DataFrame.
+
+    Returns:
+        Dict[str, Union[int, pd.DataFrame]: A tuple containing the number of executions, the number of unique venues,
+                                       and a DataFrame summarizing the count of executions by venue and date.
+    """
+    num_executions = executions_df['trade_id'].nunique()
+    num_venues = executions_df['venue'].nunique()
+    executions_df['date'] = pd.to_datetime(executions_df['tradetime']).dt.date
+    summary_df = pd.pivot_table(
+        executions_df,
+        index=['venue', 'date'],
+        values='trade_id',
+        aggfunc='count'
+    ).reset_index()
+    out_dict = {
+        'num_executions': num_executions,
+        'num_venues': num_venues,
+        'summary_df': summary_df
+    }
+    return out_dict
 
 
-ref_data_df = return_lowercase_column_names_df(dataframe=ref_data_raw_df)
-market_data_df = return_lowercase_column_names_df(dataframe=market_data_raw_df)
-executions_df = return_lowercase_column_names_df(dataframe=executions_raw_df)
+executions_venues_result_dct = count_executions_and_venues(executions_df)
 
-# garbage clearance/free up memory
-del ref_data_raw_df, market_data_raw_df, executions_raw_df
+print(f"Number of executions: {executions_venues_result_dct['num_executions']:,}")
+print(f"Number of unique venues: {executions_venues_result_dct['num_venues']}")
+print(f"Executions by venue and date:\n{executions_venues_result_dct['summary_df']}\n")
 
-# Tasks
-# 1 a.	Count the number of executions within the executions.parquet file,
-print(f"Number of executions: {executions_df['trade_id'].nunique():,.0f}")
-
-# determine the unique number of [‘Venue’]s and the date of executions. Log output this information.
-# new column for the date to get the datetime
-executions_df['date'] = pd.to_datetime(executions_df['tradetime']).dt.date
-
-print(f"Number of venues for execution: {executions_df['venue'].nunique()}")
-
-# date of executions for each venue, sorted by alphabetical order
-output_df = pd.pivot_table(
-    executions_df,
-    index=['venue', 'date'],
-    values='trade_id',
-    aggfunc='count'
-)
-print(f"Venues and dates of executions: \n ----------- \n {output_df} \n")
 
 # 2.a. Filter executions.paraquet for only CONTINUOUS_TRADING trades.
 filter_to_apply = 'CONTINUOUS_TRADING'
