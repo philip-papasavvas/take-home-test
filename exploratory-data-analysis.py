@@ -6,9 +6,24 @@ import pandas as pd
 pd.options.display.max_columns = 14
 pd.options.display.width = 800
 
-ref_data_raw_df = pd.read_parquet('data/refdata.parquet', engine='pyarrow')
-market_data_raw_df = pd.read_parquet('data/marketdata.parquet', engine='pyarrow')
-executions_raw_df = pd.read_parquet('data/executions.parquet', engine='pyarrow')
+def load_and_preprocess_data(file_path: str) -> pd.DataFrame
+    """
+    Loads a parquet file into a DataFrame and converts column names to lowercase.
+    
+    Parameters:
+        file_path (str): The file path to the parquet file.
+    
+    Returns:
+        pd.DataFrame: Preprocessed DataFrame with lowercase column names. 
+    """
+    df = pd.read_parquet(file_path, engine='pyarrow')
+    df.columns = [x.lower() for x in df.columns]
+    return df
+
+# Load and preprocess the data
+ref_data_df = load_and_preprocess_data('data/refdata.parquet')
+market_data_df = load_and_preprocess_data('data/marketdata.parquet')
+executions_df = load_and_preprocess_data('data/executions.parquet')
 
 
 def return_lowercase_column_names_df(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -69,12 +84,15 @@ continuous_executions_df_extra = pd.merge(
     right_on='isin',
     how='left'
 )
-# round to the nearest second
-continuous_executions_df_extra['time'] = continuous_executions_df_extra['tradetime'].dt.round('S')
+
+
 
 # 3. Calculations
 # a. Best bid price and best ask at execution - look at executions for each time, and then look at
 # market data
+# round to the nearest second
+continuous_executions_df_extra['time'] = continuous_executions_df_extra['tradetime'].dt.round('S')
+
 # drop all non-continuous trades in market data
 market_data_df = market_data_df.loc[market_data_df['market_state'] == 'CONTINUOUS_TRADING']
 market_data_df['datetime'] = pd.to_datetime(market_data_df['event_timestamp']).dt.round('S')
