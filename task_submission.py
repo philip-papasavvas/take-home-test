@@ -75,7 +75,41 @@ def filter_continuous_trading(executions_df: pd.DataFrame,
     continuous_df = executions_df.loc[executions_df['phase'] == phase].copy()
     # Check for duplicates
     assert continuous_df['trade_id'].is_unique, "There are duplicate trade IDs in the dataset."
+
+    assert len(continuous_df) == len(continuous_df.drop_duplicates()), f"There are duplicates in the dataset"
+
     return continuous_df
+
+def add_side_and_venue_information(
+        executions_clean_df: pd.DataFrame,
+        reference_data_df: pd.DataFrame
+):
+    """
+    Transforms the executions DataFrame by adding a 'side' column, then merges it
+    with the reference data to add 'primary_ticker' and 'primary_mic'.
+
+    Parameters:
+    executions_df (pd.DataFrame): The DataFrame containing executions data.
+    ref_data_df (pd.DataFrame): The DataFrame containing reference data.
+
+    Returns:
+    pd.DataFrame: The transformed and merged DataFrame.
+    """
+    # Add 'side' column based on 'quantity'
+    executions_clean_df['side'] = np.where(executions_clean_df['quantity'] < 0,
+                                           2,
+                                           1)
+
+    # Merge with reference data to add 'primary_ticker' and 'primary_mic'
+    merged_df = pd.merge(
+        left=executions_clean_df,
+        right=reference_data_df[['isin', 'primary_ticker', 'primary_mic']],
+        on='isin',
+        how='left'
+    )
+
+    return merged_df
+
 
 if __name__ == '__main__':
     # Load and preprocess the data
@@ -92,38 +126,18 @@ if __name__ == '__main__':
     # Task 2 - Filter for CONTINUOUS TRADING and count
     filter_to_apply = 'CONTINUOUS_TRADING'
     continuous_executions_df = filter_continuous_trading(executions_df)
-    logging.info(f"Number of {filter_to_apply} executions: {len(continuous_executions_df):,}")
+    logging.info(f"Number of {filter_to_apply} executions: {len(continuous_executions_df):,.0f}")
 
-    # check for duplicates
-    assert len(continuous_executions_df) == len(continuous_executions_df.drop_duplicates()), f"There are duplicates in the dataset"
-
-    # b.	Log output the # of executions.
-    print(f"Number of {filter_to_apply} executions: {continuous_executions_df['trade_id'].nunique():,.0f}")
-
-    # 3.	Data Transformation
-    # a.	Add column [‘side’], if quantity is negative, side = 2, if quantity is positive side = 1.
-    continuous_executions_df['side'] = np.where(
-        continuous_executions_df['quantity'] < 0,
-        2,
-        1
+    executions_df = add_side_and_venue_information(
+        executions_clean_df=continuous_executions_df,
+        reference_data_df=ref_data_df
     )
 
-    # b.	Complement the data with refdata.parquet - add primary ticker and primary mic
-    continuous_executions_df_extra = pd.merge(
-        left=continuous_executions_df,
-        right=ref_data_df[['isin','primary_ticker', 'primary_mic']],
-        left_on='isin',
-        right_on='isin',
-        how='left'
-    )
-
-
-
-    # 3. Calculations
+    # 4. Calculations
     # a. Best bid price and best ask at execution - look at executions for each time, and then look at
     # market data
     # round to the nearest second
-    continuous_executions_df_extra['time'] = continuous_executions_df_extra['tradetime'].dt.round('S')
+    executions_df['time'] = executions_df['tradetime'].dt.round('S')
 
     # drop all non-continuous trades in market data
     market_data_df = market_data_df.loc[market_data_df['market_state'] == 'CONTINUOUS_TRADING']
