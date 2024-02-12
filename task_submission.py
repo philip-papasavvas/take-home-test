@@ -115,6 +115,71 @@ def add_side_and_venue_information(
     return merged_df
 
 
+def round_data_times(
+        dataframe: pd.DataFrame,
+        time_column_name: str
+) -> pd.DataFrame:
+    """
+    Round market data/trade execution times to the nearest second.
+
+    Parameters:
+    - dataframe (DataFrame): Dataframe containing trade execution data.
+
+    Returns:
+    - DataFrame: A modified dataframe with rounded trade execution times.
+    """
+    dataframe[time_column_name] = pd.to_datetime(dataframe[time_column_name])
+    dataframe['time'] = dataframe[time_column_name].dt.round('S')
+    return dataframe
+
+
+def add_isin_to_reference_data(
+    market_data_df: pd.DataFrame,
+    reference_data_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Enrich market data with reference data ISINs.
+
+    Parameters:
+        market_data_df (DataFrame): Dataframe containing market data.
+        reference_data_df (DataFrame): Dataframe containing reference data.
+
+    Returns:
+        DataFrame: An enriched dataframe with ISINs and other reference data merged.
+    """
+    market_data_merged_df = pd.merge(
+        left=market_data_df,
+        right=reference_data_df[['isin', 'id', 'currency', 'primary_ticker']],
+        left_on='listing_id',
+        right_on='id',
+        how='left'
+    )
+    # drop these columns as we're not interested in size here
+    market_data_merged_df.drop(columns=['best_bid_size', 'best_ask_size'], inplace=True)
+    return market_data_merged_df
+
+
+def isolate_traded_stocks_venues(
+    executions_df: pd.DataFrame,
+    market_data_enriched_df: pd.DataFrame
+) -> np.ndarray:
+    """
+   Identify ISINs and venues that are traded and have market data.
+
+   Parameters:
+       executions_df (DataFrame): Dataframe containing trade execution data.
+       market_data_enriched_df (DataFrame): Dataframe containing enriched market data.
+
+   Returns:
+       ndarray: An array of unique ISIN_venue identifiers present in both executions and market data.
+   """
+    unique_traded_isin_venues = executions_df['isin_venue'].unique()
+    isin_traded_in_market_data = unique_traded_isin_venues[
+        np.in1d(unique_traded_isin_venues, market_data_enriched_df['isin_venue'].unique())
+    ]
+    return isin_traded_in_market_data
+
+
 if __name__ == '__main__':
     # Load and preprocess the data
     ref_data_df = load_and_preprocess_data('data/refdata.parquet')
@@ -138,27 +203,7 @@ if __name__ == '__main__':
         reference_data_df=ref_data_df
     )
 
-    # 4. Calculations
-    # a. Best bid price and best ask at execution - look at executions for each time, and then look at
-    # market data
-    # round to the nearest second
-    def round_data_times(
-        dataframe: pd.DataFrame,
-        time_column_name: str
-    ) -> pd.DataFrame:
-        """
-        Round market data/trade execution times to the nearest second.
-
-        Parameters:
-        - dataframe (DataFrame): Dataframe containing trade execution data.
-
-        Returns:
-        - DataFrame: A modified dataframe with rounded trade execution times.
-        """
-        dataframe[time_column_name] = pd.to_datetime(dataframe[time_column_name])
-        dataframe['time'] = dataframe[time_column_name].dt.round('S')
-        return dataframe
-
+    # Task 4. Calculations
     executions_df = round_data_times(dataframe=executions_df, time_column_name='tradetime')
 
     # drop all non-continuous trades in market data
@@ -166,60 +211,33 @@ if __name__ == '__main__':
     market_data_df = round_data_times(dataframe=market_data_df,
                                       time_column_name='event_timestamp')
 
-    def add_isin_to_reference_data(
-        market_data_df: pd.DataFrame,
-        reference_data_df: pd.DataFrame
-    ) -> pd.DataFrame:
-        """
-        Enrich market data with reference data ISINs.
-
-        Parameters:
-            market_data_df (DataFrame): Dataframe containing market data.
-            reference_data_df (DataFrame): Dataframe containing reference data.
-
-        Returns:
-            DataFrame: An enriched dataframe with ISINs and other reference data merged.
-        """
-        market_data_merged_df = pd.merge(
-            left=market_data_df,
-            right=reference_data_df[['isin', 'id', 'currency', 'primary_ticker']],
-            left_on='listing_id',
-            right_on='id',
-            how='left'
-        )
-        # drop these columns as we're not interested in size here
-        market_data_merged_df.drop(columns=['best_bid_size', 'best_ask_size'], inplace=True)
-        return market_data_merged_df
-
     market_data_df = add_isin_to_reference_data(
         market_data_df=market_data_df,
         reference_data_df=ref_data_df)
-    
+
     executions_df['isin_venue'] = executions_df['isin'] + '_' + executions_df['venue']
     market_data_df['isin_venue'] = market_data_df['isin'] + '_' + market_data_df['primary_mic']
 
-    # match the isin and venue for the execution of trades in the market data
-    unique_traded_isin_venues = executions_df['isin_venue'].unique()
-    located_isin_in_market_data = unique_traded_isin_venues[np.in1d(unique_traded_isin_venues,
-                                                                    market_data_df['isin_venue'].unique())]
+    located_isin_in_market_data = isolate_traded_stocks_venues(
+        executions_df=executions_df,
+        market_data_enriched_df=market_data_df
+    )
 
-    # cut down the market data dataframe for only the executed ISIN on each venue
+    # filter market data for only the executed ISIN on each venue
     market_data_df_subset = market_data_df.loc[
-        market_data_df['isin_venue'].isin(unique_traded_isin_venues)]
+        market_data_df['isin_venue'].isin(located_isin_in_market_data)]
 
-    # steps to ensure we can get the market data at the time of execution and one second before and after
-    # 1. ensure the isin_venue_trade_df['time'] column is the same type as market_data_isin_venue_df['datetime'],
-    # i.e. both 'datetime64[ns]' and rounded to the nearest second
-    print("Step 1, check time columns are equal")
-    assert market_data_df_subset['datetime'].dtype == executions_df[
-        'time'].dtype, 'Time columns are not the same datatype'
+    # Check time columns in market data and execution data are equal.
+    assert market_data_df_subset['datetime'].dtype == executions_df['time'].dtype, \
+        f'Time columns are not the same datatype'
 
     merged_isin_venue_data = []
     for isin_venue in located_isin_in_market_data:
-        print(f"Looking up {isin_venue}...")
-        # 2. For each trade execution time in isin_venue_trade_df, find the corresponding market data in market_data_isin_venue_df
+        logging.info(f"Inspecting market data for best bid and offer for: {isin_venue}")
+        # Match each trade execution timestamp from isin_venue_trade_df with the corresponding
+        # market data entry in market_data_isin_venue_df.
         isin_venue_trade_df = executions_df.loc[executions_df['isin_venue'] == isin_venue]
-        market_data_isin_venue_df = market_data_df_subset.loc[market_data_df_subset['isin_venue'] == isin_venue]
+        isin_venue_market_data_df = market_data_df_subset.loc[market_data_df_subset['isin_venue'] == isin_venue]
 
         # create a dataframe with unique trade execution times
         unique_execution_times = pd.DataFrame(
@@ -235,8 +253,8 @@ if __name__ == '__main__':
             unique_execution_times['time_plus_one']
         ]).drop_duplicates().reset_index(drop=True)
 
-        filtered_market_data = market_data_isin_venue_df.loc[
-            market_data_isin_venue_df['datetime'].isin(times_to_extract)]
+        filtered_market_data = isin_venue_market_data_df.loc[
+            isin_venue_market_data_df['datetime'].isin(times_to_extract)]
 
         aggregated_market_data = filtered_market_data.groupby('datetime').agg({
             'best_bid_price': 'max',  # The best bid price is the maximum bid price
