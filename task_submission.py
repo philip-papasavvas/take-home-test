@@ -1,16 +1,19 @@
 # Added on Friday 9 Feb by Philip P
 # Take Home Test Submissions for Financial Company
 
+# built-in python imports with python verison installed specified on Dockerfile
 import logging
 import os
 import time
 from typing import Dict, Union
 
+# third party imports
 import numpy as np
 import pandas as pd
 
 pd.options.display.max_columns = 14
 pd.options.display.width = 800
+
 
 # setup timer log for performance metrics - Task 5
 def timed_log(func):
