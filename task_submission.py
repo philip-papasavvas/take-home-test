@@ -12,15 +12,6 @@ import pandas as pd
 pd.options.display.max_columns = 14
 pd.options.display.width = 800
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='data_analysis.log',  # Log file path
-    filemode='w'  # 'w' to overwrite the log file each time, 'a' to append
-)
-
-
 # setup timer log for performance metrics - Task 5
 def timed_log(func):
     """
@@ -350,6 +341,14 @@ def run_stock_calculations(
 if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename='output/data_analysis.log',  # Log file path
+        filemode='w'  # 'w' to overwrite the log file each time, 'a' to append
+    )
 
     # Load and preprocess the data
     ref_data_df = load_and_preprocess_data('data/refdata.parquet')
